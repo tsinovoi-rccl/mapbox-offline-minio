@@ -1,0 +1,87 @@
+{
+    "id": "/mapbox-offline",
+    "instances": 2,
+    "cpus": 1,
+    "mem": 1024,
+    "disk": 0,
+    "gpus": 0,
+    "constraints": [],
+    "fetch": [],
+    "storeUrls": [],
+    "backoffSeconds": 1,
+    "backoffFactor": 1.15,
+    "maxLaunchDelaySeconds": 3600,
+     "cmd": "./hapttic -file ./mbgl-offline -logErrors=$LOG_ERRORS -minioEndpoint $MINIO_ENDPOINT -minioBucket $MINIO_BUCKET_NAME -minioAccessSecret $MINIO_ACCESS_SECRET -minioAccessID $MINIO_ACCESS_ID -minioSSL=$MINIO_USE_SSL",
+    "container": {
+        "type": "DOCKER",
+        "volumes": [],
+        "docker": {
+            "image": "tst2-registry.nowlab.tstsh.tstrccl.com:10104/mapbox-offline:1.0.0",
+            "network": "BRIDGE",
+            "portMappings": [{
+                "containerPort": 8080,
+                "hostPort": 0,
+                "servicePort": 10193,
+                "protocol": "tcp",
+                "name": "http",
+                "labels": {
+                    "VIP_0": "/mapbox-offline:8030"
+                }
+            }],
+            "privileged": false,
+            "parameters": [],
+            "forcePullImage": true
+        }
+    },
+    "healthChecks": [{
+        "gracePeriodSeconds": 230,
+        "intervalSeconds": 60,
+        "timeoutSeconds": 20,
+        "maxConsecutiveFailures": 10,
+        "delaySeconds": 15,
+        "command": {
+            "value": "echo 'I am Healthy\n'"
+        },
+        "protocol": "COMMAND"
+    }],
+    "readinessChecks": [],
+    "dependencies": [],
+    "upgradeStrategy": {
+        "minimumHealthCapacity": 1,
+        "maximumOverCapacity": 1
+    },
+    "unreachableStrategy": {
+        "inactiveAfterSeconds": 300,
+        "expungeAfterSeconds": 600
+    },
+    "killSelection": "YOUNGEST_FIRST",
+    "acceptedResourceRoles": [
+        "*"
+    ],
+    "requirePorts": false,
+    "labels": {
+        "DCOS_PACKAGE_RELEASE": "6",
+        "DCOS_SERVICE_SCHEME": "http",
+        "DCOS_PACKAGE_SOURCE": "https://universe.mesosphere.com/repo",
+        "HAPROXY_GROUP": "external",
+        "DCOS_PACKAGE_METADATA": "eyJwYWNrYWdpbmdWZXJzaW9uIjoiMi4wIiwibmFtZSI6Im5naW54IiwidmVyc2lvbiI6IjEuMTAuMyIsIm1haW50YWluZXIiOiJjb250YWluZXJzQGJpdG5hbWkuY29tIiwiZGVzY3JpcHRpb24iOiJuZ2lueCBpcyBhIGhpZ2ggcGVyZm9ybWFuY2UgSFRUUCBhbmQgcmV2ZXJzZSBwcm94eSBzZXJ2ZXIuIEFuIGV4YW1wbGUgZm9yIHRoaXMgcGFja2FnZSdzIHVzYWdlIGNhbiBiZSBmb3VuZCBhdCBodHRwczovL2dpdGh1Yi5jb20vZGNvcy9leGFtcGxlcy90cmVlL21hc3Rlci8xLjgvbmdpbngiLCJ0YWdzIjpbInByb3h5Iiwid2ViLXNlcnZlciIsImNhY2hlIiwicmV2ZXJzZS1wcm94eSJdLCJzZWxlY3RlZCI6ZmFsc2UsInNjbSI6Imh0dHA6Ly9oZy5uZ2lueC5vcmcvbmdpbngvIiwiZnJhbWV3b3JrIjpmYWxzZSwicHJlSW5zdGFsbE5vdGVzIjoiVGhpcyBEQy9PUyBTZXJ2aWNlIGlzIGN1cnJlbnRseSBpbiBwcmV2aWV3LiBUaGVyZSBtYXkgYmUgYnVncywgaW5jb21wbGV0ZSBmZWF0dXJlcywgaW5jb3JyZWN0IGRvY3VtZW50YXRpb24sIG9yIG90aGVyIGRpc2NyZXBhbmNpZXMuIEV4cGVyaW1lbnRhbCBwYWNrYWdlcyBzaG91bGQgbmV2ZXIgYmUgdXNlZCBpbiBwcm9kdWN0aW9uISIsInBvc3RJbnN0YWxsTm90ZXMiOiJOZ2lueCBoYXMgYmVlbiBpbnN0YWxsZWQuIiwicG9zdFVuaW5zdGFsbE5vdGVzIjoiTmdpbnggd2FzIHVuaW5zdGFsbGVkIHN1Y2Nlc3NmdWxseS4iLCJsaWNlbnNlcyI6W3sibmFtZSI6IkJTRCBsaWtlIiwidXJsIjoiaHR0cDovL25naW54Lm9yZy9MSUNFTlNFIn1dLCJpbWFnZXMiOnsiaWNvbi1zbWFsbCI6Imh0dHBzOi8vcGJzLnR3aW1nLmNvbS9wcm9maWxlX2ltYWdlcy81Njc3NzQ4NDQzMjI3MTM2MDAvdFlvVmp1MzEucG5nIiwiaWNvbi1tZWRpdW0iOiJodHRwczovL3Bicy50d2ltZy5jb20vcHJvZmlsZV9pbWFnZXMvNTY3Nzc0ODQ0MzIyNzEzNjAwL3RZb1ZqdTMxLnBuZyIsImljb24tbGFyZ2UiOiJodHRwczovL3Bicy50d2ltZy5jb20vcHJvZmlsZV9pbWFnZXMvNTY3Nzc0ODQ0MzIyNzEzNjAwL3RZb1ZqdTMxLnBuZyJ9fQ==",
+        "DCOS_PACKAGE_REGISTRY_VERSION": "2.0",
+        "DCOS_SERVICE_NAME": "mapbox-offline",
+        "DCOS_SERVICE_PORT_INDEX": "0",
+        "HAPROXY_0_HTTP_BACKEND_PROXYPASS_PATH": "/mapbox-offline",
+        "HAPROXY_0_PATH": "/mapbox-offline",
+        "DCOS_PACKAGE_VERSION": "1.10.3",
+        "DCOS_PACKAGE_NAME": "mapbox-offline",
+        "DCOS_PACKAGE_IS_FRAMEWORK": "false",
+        "HAPROXY_0_VHOST": "10.135.105.158,10.135.105.159,shiptst1.mesos.rccl.com"
+    },
+    "env": {
+        "MINIO_ACCESS_ID": "MINIO",
+        "MINIO_ACCESS_SECRET": "MINIO123",
+        "MINIO_ENDPOINT": "minio-maps.mesos:9000",
+        "MINIO_BUCKET_NAME": "mapTiles",
+        "MINIO_LOCATION": "ship-lab",
+        "MINIO_USE_SSL":"false",
+        "LOG_ERRORS": "true",
+    }
+}

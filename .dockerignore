@@ -1,0 +1,6 @@
+mbgl-offline
+release.sh
+mapbox-offline-pod.json
+*.db
+/minio
+debug

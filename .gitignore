@@ -1,0 +1,5 @@
+*.db
+mbgl-offline
+release.sh
+mapbox-offline-pod.json
+debug
