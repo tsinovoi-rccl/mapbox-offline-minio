@@ -7,7 +7,8 @@
 ## Running with Go Server Listening at "/"
 
 To run server:
-`./hapttic -file ./mbgl-offline -logErrors true`
+`./hapttic -file ./mbgl-offline -logErrors=true -minioEndpoint 127.0.0.1 -minioAccessID minio -minioAccessSecret minio123 -minioBucket maps -minioLocation sh
+ip -minioSSL false`
 
 This is using the hapttic library to run shells triggered by API endpoint at PORT 8080
 It takes in a *POST* request with a body like:
