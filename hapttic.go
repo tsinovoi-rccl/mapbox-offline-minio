@@ -7,11 +7,14 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"time"
 	"unicode/utf8"
 
 	minio "github.com/minio/minio-go"
@@ -22,6 +25,7 @@ const version = "1.0.0"
 var minioEndpoint, minioAccessID, minioAccessSecret, minioBucket, minioLocation string
 var minioSSL bool
 
+//minio functions
 func initMinio(endpoint string, accessKeyID string, secretAccessKey string, ssl bool) (minioClient *minio.Client, minioErr error) {
 	// Initialize minio client object.
 	client, minioErr := minio.New(endpoint, accessKeyID, secretAccessKey, ssl)
@@ -29,6 +33,21 @@ func initMinio(endpoint string, accessKeyID string, secretAccessKey string, ssl 
 		fmt.Println(minioErr)
 	}
 	return client, minioErr
+}
+
+func minioChecker(minioEndpoint string) (up bool) {
+	_, err := net.Dial("tcp", minioEndpoint)
+	if err != nil {
+		return false
+	}
+	return true
+}
+func mapboxChecker() (up bool) {
+	_, err := net.Dial("tcp", "api.mapbox.com:443")
+	if err != nil {
+		return false
+	}
+	return true
 }
 
 func minioUpload(minioClient *minio.Client, bucketName string, location string, objectName string, filePath string) (minioErr error) {
@@ -58,6 +77,16 @@ func minioUpload(minioClient *minio.Client, bucketName string, location string, 
 	return err
 }
 
+type errorPayload struct {
+	Status       int32  `json:"status"`
+	ErrorPayload string `json:"error"`
+}
+
+type healthStatus struct {
+	OverallHealth string `json:"overallHealth"`
+	Minio         string `json:"minio"`
+	Connectivity  string `json:"connectivity"`
+}
 type minioDetails struct {
 	minioEndpoint     string
 	minioAccessID     string
@@ -124,89 +153,133 @@ func ensureMinioFlagsExist(endpoint string, accessKeyID string, secretAccessKey 
 	return true
 }
 
+func writeJSONResponse(w http.ResponseWriter, status int, data []byte) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	w.WriteHeader(status)
+	w.Write(data)
+}
+
+//statusHandler heath check handlefunc
+func statusHandler(minioFlags minioDetails) func(w http.ResponseWriter, req *http.Request) {
+	return func(res http.ResponseWriter, req *http.Request) {
+		//logg request - start
+		t1 := time.Now()
+		minioStatus := minioChecker(minioFlags.minioEndpoint)
+		mapboxStatus := mapboxChecker()
+		if (minioStatus != false) && (mapboxStatus != false) {
+			data, _ := json.Marshal(healthStatus{OverallHealth: "UP", Minio: "UP", Connectivity: "UP"})
+			writeJSONResponse(res, http.StatusOK, data)
+		} else if (minioStatus != true) && (mapboxStatus != false) {
+			data, _ := json.Marshal(healthStatus{OverallHealth: "DOWN", Minio: "DOWN", Connectivity: "UP"})
+			writeJSONResponse(res, http.StatusServiceUnavailable, data)
+		} else if (minioStatus != false) && (mapboxStatus != true) {
+			data, _ := json.Marshal(healthStatus{OverallHealth: "DOWN", Minio: "UP", Connectivity: "DOWN"})
+			writeJSONResponse(res, http.StatusServiceUnavailable, data)
+		} else {
+			data, _ := json.Marshal(healthStatus{OverallHealth: "DOWN", Minio: "DOWN", Connectivity: "DOWN"})
+			writeJSONResponse(res, http.StatusServiceUnavailable, data)
+		}
+		t2 := time.Now()
+		log.Printf("[%s] %q %v", req.Method, req.URL.String(), t2.Sub(t1))
+	}
+}
+
 // handleFuncWithScriptFileName constructs our handleFunc
 func handleFuncWithScriptFileName(scriptFileName string, logErrorsToStderr bool, minioFlags minioDetails) func(s http.ResponseWriter, req *http.Request) {
 	return func(res http.ResponseWriter, req *http.Request) {
-		ensureRequestHandlingScriptExists(scriptFileName)
+		//logg request - start
+		t1 := time.Now()
+		if req.Method == "POST" {
+			ensureRequestHandlingScriptExists(scriptFileName)
 
-		var mapRequest MapRequestBody
-		err := json.NewDecoder(req.Body).Decode(&mapRequest)
-		// r, err := json.Unmarshal(body, &mapRequest)
-		if err != nil {
-			fmt.Println("whoops:", err)
-		}
-
-		// req.ParseForm()
-
-		// Try to convert to JSON. This shouldn't fail
-		requestJSON, err := json.Marshal(mapRequest)
-		if err != nil {
-			log.Fatal(err)
-		}
-		cmdArgs := []string{"--north", mapRequest.NorthBound, "--west", mapRequest.WestBound, "--south", mapRequest.SouthBound, "--east", mapRequest.EastBound, "--output", mapRequest.MapName, "--style", mapRequest.MapStyle, "--token", mapRequest.MapboxAccessToken, "--minZoom", mapRequest.MinZoom, "--maxZoom", mapRequest.MaxZoom, "--pixelRatio", mapRequest.PixelRatio}
-		log.Println("Arguments String")
-		fmt.Printf("%v", cmdArgs)
-		log.Println("Executing " + scriptFileName)
-		var stdoutBuf, stderrBuf bytes.Buffer
-		//Execute Command
-		cmd := exec.Command(scriptFileName, cmdArgs...)
-		//Pipe Progress From Execution to StdErr and StdOut
-		stdoutIn, _ := cmd.StdoutPipe()
-		stderrIn, _ := cmd.StderrPipe()
-		var errStdout, errStderr error
-		stdout := io.MultiWriter(os.Stdout, &stdoutBuf)
-		stderr := io.MultiWriter(os.Stderr, &stderrBuf)
-		cmdErr := cmd.Start()
-		if cmdErr != nil {
-			log.Fatalf("cmd.Start() failed with '%s'\n", cmdErr)
-			// If there was an error, we return a response with status code 500
-			res.WriteHeader(http.StatusInternalServerError)
-			io.WriteString(res, "500 Internal Server Error: \n"+cmdErr.Error())
-			if logErrorsToStderr {
-				log.Println("\033[33;31m--- ERROR: ---\033[0m")
-				log.Println("\033[33;31mParams:\033[0m")
-				log.Println(string(requestJSON))
-				log.Println("\033[33;31mScript output:\033[0m")
-				log.Println(cmd)
-				outStr, errStr := string(stdoutBuf.Bytes()), string(stderrBuf.Bytes())
-				fmt.Printf("\nout:\n%s\nerr:\n%s\n", outStr, errStr)
-				log.Println("\033[33;31m---- END: ----\033[0m")
-			}
-		}
-		go func() {
-			_, errStdout = io.Copy(stdout, stdoutIn)
-		}()
-
-		go func() {
-			_, errStderr = io.Copy(stderr, stderrIn)
-		}()
-		err = cmd.Wait()
-		if cmdErr != nil {
-			log.Fatalf("cmd.Run() failed with %s\n", cmdErr)
-		}
-		if errStdout != nil || errStderr != nil {
-			log.Fatal("failed to capture stdout or stderr\n")
-		}
-		outStr, errStr := string(stdoutBuf.Bytes()), string(stderrBuf.Bytes())
-		fmt.Printf("\nStdout:\n%s\nStderr:\n%s\n", outStr, errStr)
-		fmt.Println("Command Ran / Program Output: \n", cmd)
-		res.Header().Set("Content-Type", "application/json")
-		res.WriteHeader(http.StatusOK)
-		res.Write(requestJSON)
-
-		if minioFlags.useMinio == true {
-			minioClient, err := initMinio(minioFlags.minioEndpoint, minioFlags.minioAccessID, minioFlags.minioAccessSecret, minioFlags.minioSSL)
+			var mapRequest MapRequestBody
+			err := json.NewDecoder(req.Body).Decode(&mapRequest)
+			// r, err := json.Unmarshal(body, &mapRequest)
 			if err != nil {
-				log.Fatalf("minio client initialization failed with %s\n", err)
-				return
+				fmt.Println("whoops:", err)
 			}
-			uploadErr := minioUpload(minioClient, minioFlags.minioBucket, minioFlags.minioLocation, mapRequest.MapName, mapRequest.OutputDir)
-			if uploadErr != nil {
-				log.Fatalf("minio client initialization failed with %s\n", uploadErr)
-				return
-			}
-		}
 
+			// req.ParseForm()
+
+			// Try to convert to JSON. This shouldn't fail
+			requestJSON, err := json.Marshal(mapRequest)
+			if err != nil {
+				log.Fatal(err)
+			}
+			cmdArgs := []string{"--north", mapRequest.NorthBound, "--west", mapRequest.WestBound, "--south", mapRequest.SouthBound, "--east", mapRequest.EastBound, "--output", mapRequest.MapName, "--style", mapRequest.MapStyle, "--token", mapRequest.MapboxAccessToken, "--minZoom", mapRequest.MinZoom, "--maxZoom", mapRequest.MaxZoom, "--pixelRatio", mapRequest.PixelRatio}
+			log.Println("Arguments String")
+			fmt.Printf("%v", cmdArgs)
+			log.Println("Executing " + scriptFileName)
+			var stdoutBuf, stderrBuf bytes.Buffer
+			//Execute Command
+			cmd := exec.Command(scriptFileName, cmdArgs...)
+			//Pipe Progress From Execution to StdErr and StdOut
+			stdoutIn, _ := cmd.StdoutPipe()
+			stderrIn, _ := cmd.StderrPipe()
+			var errStdout, errStderr error
+			stdout := io.MultiWriter(os.Stdout, &stdoutBuf)
+			stderr := io.MultiWriter(os.Stderr, &stderrBuf)
+			cmdErr := cmd.Start()
+			if cmdErr != nil {
+				log.Fatalf("cmd.Start() failed with '%s'\n", cmdErr)
+				// If there was an error, we return a response with status code 500
+				res.WriteHeader(http.StatusInternalServerError)
+				io.WriteString(res, "500 Internal Server Error: \n"+cmdErr.Error())
+				if logErrorsToStderr {
+					log.Println("\033[33;31m--- ERROR: ---\033[0m")
+					log.Println("\033[33;31mParams:\033[0m")
+					log.Println(string(requestJSON))
+					log.Println("\033[33;31mScript output:\033[0m")
+					log.Println(cmd)
+					outStr, errStr := string(stdoutBuf.Bytes()), string(stderrBuf.Bytes())
+					fmt.Printf("\nout:\n%s\nerr:\n%s\n", outStr, errStr)
+					log.Println("\033[33;31m---- END: ----\033[0m")
+				}
+			}
+			go func() {
+				_, errStdout = io.Copy(stdout, stdoutIn)
+			}()
+
+			go func() {
+				_, errStderr = io.Copy(stderr, stderrIn)
+			}()
+			err = cmd.Wait()
+			if cmdErr != nil {
+				log.Fatalf("cmd.Run() failed with %s\n", cmdErr)
+			}
+			if errStdout != nil || errStderr != nil {
+				log.Fatal("failed to capture stdout or stderr\n")
+			}
+			outStr, errStr := string(stdoutBuf.Bytes()), string(stderrBuf.Bytes())
+			fmt.Printf("\nStdout:\n%s\nStderr:\n%s\n", outStr, errStr)
+			fmt.Println("Command Ran / Program Output: \n", cmd)
+
+			if minioFlags.useMinio == true {
+				fmt.Println("Starting Minio Connection and Upload")
+				minioClient, err := initMinio(minioFlags.minioEndpoint, minioFlags.minioAccessID, minioFlags.minioAccessSecret, minioFlags.minioSSL)
+				if err != nil {
+					log.Fatalf("minio client initialization failed with %s\n", err)
+					res.Header().Set("Content-Type", "application/json")
+					res.WriteHeader(http.StatusRequestTimeout)
+				}
+				uploadErr := minioUpload(minioClient, minioFlags.minioBucket, minioFlags.minioLocation, mapRequest.MapName, mapRequest.OutputDir)
+				if uploadErr != nil {
+					log.Fatalf("minio client initialization failed with %s\n", uploadErr)
+					res.Header().Set("Content-Type", "application/json")
+					res.WriteHeader(http.StatusRequestTimeout)
+				}
+				return
+			}
+			res.Header().Set("Content-Type", "application/json")
+			res.WriteHeader(http.StatusOK)
+			res.Write(requestJSON)
+		} else {
+			data, _ := json.Marshal(errorPayload{Status: 403, ErrorPayload: "Method Not Allowed"})
+			writeJSONResponse(res, http.StatusMethodNotAllowed, data)
+		}
+		t2 := time.Now()
+		log.Printf("[%s] %q %v", req.Method, req.URL.String(), t2.Sub(t1))
 	}
 }
 
@@ -275,7 +348,7 @@ func main() {
 	fmt.Println("Use Minio?:", minioFlags.useMinio)
 
 	http.HandleFunc("/", handleFuncWithScriptFileName(scriptFileName, *logErrorsToStderr, minioFlags))
-
+	http.HandleFunc("/health", statusHandler(minioFlags))
 	addr := *host + ":" + *port
 	log.Println("Thanks for using hapttic v" + version)
 	log.Println(fmt.Sprintf("Listening on %s", addr))
@@ -283,5 +356,9 @@ func main() {
 	if *logErrorsToStderr {
 		log.Println("Logging errors to stderr")
 	}
-	log.Fatal(http.ListenAndServe(addr, nil))
+	serverErr := http.ListenAndServe(addr, nil)
+	if serverErr != nil {
+		log.Println(serverErr)
+		os.Exit(1)
+	}
 }

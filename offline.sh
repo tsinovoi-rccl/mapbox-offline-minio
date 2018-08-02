@@ -4,7 +4,7 @@ echo $1
 
 set -e
 set -o pipefail
-MAPBOX_ACCESS_TOKEN="pk.eyJ1IjoicmNjbCIsImEiOiJjamRhcThyd3A3aWcwMzNvNXV1aTU4ZzBtIn0.1zaneG6GaAy44AvmfULNiw"
+MAPBOX_ACCESS_TOKEN="pk.eyJ1IjoicmNjbCIsImEiOiJjams5MnRsa2YxcnV1M3BxbGw2ZTI1NW10In0.c56J36FCoHjnIM4UoIIWQQ"
 
 OFFLINE=./mbgl-offline
 

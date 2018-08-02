@@ -2,4 +2,5 @@
 mbgl-offline
 release.sh
 mapbox-offline-pod.json
+marathon.json
 debug
